@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<GuoSenDeviceSystem>
+	<DBData OperaterType="Write" DBTable="USERRIGHT" SQL="Select USERID From USERRIGHT">
+		<ColData>
+			<ColItem Name="USERID" DisplayName="用户帐号"/>
+			<ColItem Name="OperationTypeID" DisplayName="权限序号"/>
+			<ColItem Name="CanCheck" DisplayName="是否可取消"/>
+		</ColData>
+		<RowData>
+			<RowItem ID="1">
+				<Field Name="USERID" Value="opt"/>
+				<Field Name="OperationTypeID" Value="opt"/>
+				<Field Name="CanCheck" Value="是"/>
+			</RowItem>
+			<RowItem ID="2">
+				<Field Name="USERID" Value="opt1"/>
+				<Field Name="OperationTypeID" Value="dffd"/>
+				<Field Name="CanCheck" Value="否"/>
+			</RowItem>
+			<RowItem ID="3">
+				<Field Name="USERID" Value="dfdfdf"/>
+				<Field Name="OperationTypeID" Value="sadcccc"/>
+				<Field Name="CanCheck" Value="是"/>
+			</RowItem>
+		</RowData>
+	</DBData>
+</GuoSenDeviceSystem>

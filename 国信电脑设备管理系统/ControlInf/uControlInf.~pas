@@ -1,0 +1,44 @@
+unit uControlInf;
+
+{ 此类放全局变量 }
+
+interface
+
+uses
+  Classes, uDBInf, SysUtils, uDBFieldData, ActiveX;
+
+type
+  TGlobalControl = class
+  private
+  
+  public
+    constructor Create;
+    destructor Destroy; override;
+  end;
+
+var
+  gGlobalControl: TGlobalControl;
+  gDatabaseControl: TDatabaseControl;
+
+implementation
+
+uses
+  FrmDBConfig;
+
+{ TGlobalControl }
+
+constructor TGlobalControl.Create;
+begin
+  ReadDBConfigFromIni;
+  gDatabaseControl := TDatabaseControl.Create;
+  //缓存初始化
+  
+end;
+
+destructor TGlobalControl.Destroy;
+begin
+  FreeAndNil(gDatabaseControl);
+
+end;
+
+end.

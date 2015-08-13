@@ -1,0 +1,777 @@
+unit uDBInf;
+
+interface
+
+uses
+  ADODB, DB, ActiveX, SysUtils, Classes, uDBFieldData;
+
+type
+  TDBInterface = packed record
+    DBServer: string;
+    DBPort: Integer;
+    DBUserName: string;
+    DBPassword: string;
+    DBName: string;
+  end;
+
+  TDatabaseControl = class
+  private
+    //FADOQuery: TADOQuery;
+    //FDataSource: TDataSource;
+  public
+    constructor Create;
+    destructor Destroy; override;
+    procedure ExecCustomSQL(const sqlStr: string);
+    procedure OpenQuery(const sqlStr: string);
+    //-----------------------旧程序所使用的代码---------------------------------
+    function IsExistInProductDB(const AProductName: string): Boolean;
+    function IsExistInClientDB(const AClientName: string): Boolean;
+    function IsExistInAreaDB(const AAreaName: string): Boolean;
+    //-----------------------新程序所写的代码-----------------------------------
+    function IsExistInDeviceLocationDB(ADeviceId: Integer): Boolean;
+    function GetLocationNameByDeviceId(ADeviceId: Integer): string;
+    function GetUserNameByDeviceId(ADeviceId: Integer): string;
+    function GetOutTimeByDeviceId(ADeviceId: Integer): string;
+    function GetTableCountFromDB(const ATableName, ACondition: string): Integer;
+    function GetDBIdByDBName(const ATableName, AColName, AName: string): Integer;
+
+    procedure AddDeviceFromXMLData(IXMLDBData: IXMLGuoSenDeviceSystemType);
+    procedure DelDeviceByXMLData(IXMLDBData: IXMLGuoSenDeviceSystemType);
+    procedure ModifyDeviceByXMLData(IXMLDBData: IXMLGuoSenDeviceSystemType);
+
+    //除只有ID和名称的表外所有表使用这方法查询
+    procedure QueryDataByXMLData(IXMLDBData: IXMLGuoSenDeviceSystemType);
+
+    procedure AddNameToDB(const ATable, AName: string);
+    procedure DelNameById(const ATable: string; AIndexId: Integer);
+    procedure ModifyNameById(const ATable, AName: string; AIndexId: Integer);
+    //只查询名称的表使用此方法
+    procedure QueryNameFromDB(const ATable, AColName: string; ANameList: TStringList);
+
+    procedure AddLocationFromXMLData(IXMLDBData: IXMLGuoSenDeviceSystemType);
+    procedure DelLocationByXMLData(IXMLDBData: IXMLGuoSenDeviceSystemType);
+    procedure ModifyLocationByXMLData(IXMLDBData: IXMLGuoSenDeviceSystemType);
+
+    procedure AddUserFromXMLData(IXMLDBData: IXMLGuoSenDeviceSystemType);
+    procedure DelUserByXMLData(IXMLDBData: IXMLGuoSenDeviceSystemType);
+    procedure ModifyUserByXMLData(IXMLDBData: IXMLGuoSenDeviceSystemType);
+
+    procedure AddDeviceLocationFromXMLData(IXMLDBData: IXMLGuoSenDeviceSystemType);
+    procedure DelDeviceLocationByXMLData(IXMLDBData: IXMLGuoSenDeviceSystemType);
+
+    procedure AddDeviceHistoryFromXMLData(IXMLDBData: IXMLGuoSenDeviceSystemType);
+  end;
+
+  function GetOneDataSource: TDataSource;
+  procedure FreeMyDataSource(ADataSource: TDataSource);
+  procedure OpenQuery(ADataSource: TDataSource; const sqlStr: string);
+  procedure ExecMySQL(const ASQL: string);
+  procedure SetClientInfoVisible(AClientId: Integer; isVisible: Boolean);
+
+const
+  CSSQLConnectionString = 'Provider=sqloledb;Data Source=%s,%s;'
+    + 'Network Library=DBMSSOCN;' + 'Initial Catalog=%s;' + 'User ID=%s;' +
+    'Password=%s;';
+
+//'Provider=SQLOLEDB.1;Password=dlxwtest2014.;Persist Security Info=True;User ID=sa;Initial Catalog=QingyeFoodSys;Data Source=HARDY-PC\SQLEXPRESS';
+
+var
+  gDBInterface: TDBInterface;
+
+implementation
+
+uses
+  uControlInf, uStaticFunction, uDefine, uTransform;
+
+function GetOneQry: TADOQuery;
+var
+  MyConnectStr: string;
+begin
+  CoInitialize(nil);
+  Result := TADOQuery.Create(nil);
+  MyConnectStr := Format(CSSQLConnectionString,
+                            [gDBInterface.DBServer,
+                            IntToStr(gDBInterface.DBPort),
+                            gDBInterface.DBName,
+                            gDBInterface.DBUserName,
+                            gDBInterface.DBPassword]);
+  Result.ConnectionString := MyConnectStr;
+  Result.CommandTimeout := 0;
+end;
+
+procedure FreeMyQuery(ADOQuery: TADOQuery);
+begin
+  FreeAndNil(ADOQuery);
+  CoUninitialize;
+end;
+
+procedure ExecMySQL(const ASQL: string);
+var
+  Qry: TADOQuery;
+begin
+  Qry := GetOneQry;
+  try
+    Qry.Close;
+    Qry.SQL.Clear;
+    Qry.SQL.Add(ASQL);
+    Qry.ExecSQL;
+  finally
+    FreeMyQuery(Qry);
+  end;
+end;
+
+procedure SetClientInfoVisible(AClientId: Integer; isVisible: Boolean);
+var
+  ASQL: string;
+  iVisible: Integer;
+begin
+  if isVisible then
+    iVisible := 1
+  else
+    iVisible := 0;
+  ASQL := Format('UPDATE ClientInfo SET [IsVisible] = %d WHERE ClientId = %d ', [iVisible, AClientId]);
+  ExecMySQL(ASQL);
+end;
+
+function GetOneDataSource: TDataSource;
+begin
+  Result := TDataSource.Create(nil);
+  Result.DataSet := GetOneQry;
+end;
+
+procedure FreeMyDataSource(ADataSource: TDataSource);
+var
+  Qry: TADOQuery;
+begin
+  Qry := TADOQuery(ADataSource.DataSet);
+  FreeAndNil(ADataSource);
+  FreeMyQuery(Qry);
+end;
+
+procedure OpenQuery(ADataSource: TDataSource; const sqlStr: string);
+var
+  Qry: TADOQuery;
+begin
+  Qry := TADOQuery(ADataSource.DataSet);
+  Qry.Close;
+  Qry.SQL.Clear;
+  Qry.SQL.Add(sqlStr);
+  //Qry.ExecSQL;
+  Qry.Open;
+end;
+
+{ TDatabaseControl }
+
+constructor TDatabaseControl.Create;
+begin
+  //gDBInterface.DBServer := 'localhost';
+  //gDBInterface.DBPort := 1433;
+  //gDBInterface.DBUserName := 'sa';
+  //gDBInterface.DBPassword := '123456';
+  //gDBInterface.DBPassword := 'dlxwtest2014.';
+  //gDBInterface.DBPassword := '1234.abcd';
+  //gDBInterface.DBPassword := 'gxzhxw2014';
+  //gDBInterface.DBPassword := 'jfadmin';
+  //gDBInterface.DBName := 'DevicesSystem';
+end;
+
+destructor TDatabaseControl.Destroy;
+begin
+  inherited;
+end;
+
+procedure TDatabaseControl.ExecCustomSQL(const sqlStr: string);
+var
+  ADOQuery: TADOQuery;
+begin
+  ADOQuery := GetOneQry;
+  ADOQuery.Close;
+  ADOQuery.SQL.Clear;
+  ADOQuery.SQL.Add(sqlStr);
+  ADOQuery.ExecSQL;
+  //ADOQuery.Open;
+  FreeMyQuery(ADOQuery);
+end;
+
+procedure TDatabaseControl.OpenQuery(const sqlStr: string);
+var
+  ADOQuery: TADOQuery;
+begin
+  ADOQuery := GetOneQry;
+  ADOQuery.Close;
+  ADOQuery.SQL.Clear;
+  ADOQuery.SQL.Add(sqlStr);
+  //ADOQuery.ExecSQL;
+  ADOQuery.Open;
+  FreeMyQuery(ADOQuery);
+end;
+
+function TDatabaseControl.IsExistInClientDB(
+  const AClientName: string): Boolean;
+const
+  CSSelectSQL = 'Select * From ClientInfo ' +
+                'where (ClientName = %s) and (IsVisible = 1) ';
+var
+  recordset: _Recordset;
+  ADOQuery: TADOQuery;
+begin
+  Result := False;
+  ADOQuery := GetOneQry;
+  try
+    ADOQuery.Close;
+    ADOQuery.SQL.Clear;
+    ADOQuery.SQL.Add(Format(CSSelectSQL, [QuotedStr(AClientName)]));
+    //ADOQuery.LockType := ltReadOnly;
+    //ADOQuery.Fields['id'].AsString;
+    ADOQuery.Open;
+    recordset := ADOQuery.Recordset;
+    Result := (recordset.RecordCount > 0);
+  finally
+    FreeMyQuery(ADOQuery);
+  end;
+end;
+
+function TDatabaseControl.IsExistInAreaDB(
+  const AAreaName: string): Boolean;
+const
+  CSSelectSQL = 'Select * From AreaInfo ' +
+                'where (AreaName = %s) and (IsVisible = 1) ';
+var
+  recordset: _Recordset;
+  ADOQuery: TADOQuery;
+begin
+  Result := False;
+  ADOQuery := GetOneQry;
+  try
+    ADOQuery.Close;
+    ADOQuery.SQL.Clear;
+    ADOQuery.SQL.Add(Format(CSSelectSQL, [QuotedStr(AAreaName)]));
+    //ADOQuery.LockType := ltReadOnly;
+    //ADOQuery.Fields['id'].AsString;
+    ADOQuery.Open;
+    recordset := ADOQuery.Recordset;
+    Result := (recordset.RecordCount > 0);
+  finally
+    FreeMyQuery(ADOQuery);
+  end;
+end;
+
+function TDatabaseControl.IsExistInProductDB(
+  const AProductName: string): Boolean;
+const
+  CSSelectSQL = 'Select * From ProductInfo ' +
+                'where (ProductName = %s) and (IsVisible = 1) ';
+var
+  recordset: _Recordset;
+  ADOQuery: TADOQuery;
+begin
+  Result := False;
+  ADOQuery := GetOneQry;
+  try
+    ADOQuery.Close;
+    ADOQuery.SQL.Clear;
+    ADOQuery.SQL.Add(Format(CSSelectSQL, [QuotedStr(AProductName)]));
+    //ADOQuery.LockType := ltReadOnly;
+    //ADOQuery.Fields['id'].AsString;
+    ADOQuery.Open;
+    recordset := ADOQuery.Recordset;
+    Result := (recordset.RecordCount > 0);
+  finally
+    FreeMyQuery(ADOQuery);
+  end;
+end;
+
+//-----------------------------新增加的代码-------------------------------------
+//以上代码是原来程序所编写，以下是设备系统的数据库代码
+
+function TDatabaseControl.IsExistInDeviceLocationDB(
+  ADeviceId: Integer): Boolean;
+const
+  CSSelectSQL = 'Select * From DeviceLocationInfo ' +
+                'where (DeviceId = %d) ';
+var
+  recordset: _Recordset;
+  ADOQuery: TADOQuery;
+begin
+  Result := False;
+  ADOQuery := GetOneQry;
+  try
+    ADOQuery.Close;
+    ADOQuery.SQL.Clear;
+    ADOQuery.SQL.Add(Format(CSSelectSQL, [ADeviceId]));
+    //ADOQuery.LockType := ltReadOnly;
+    //ADOQuery.Fields['id'].AsString;
+    ADOQuery.Open;
+    recordset := ADOQuery.Recordset;
+    Result := (recordset.RecordCount > 0);
+  finally
+    FreeMyQuery(ADOQuery);
+  end;
+end;
+
+//此方法只查询有效的设备数目
+function TDatabaseControl.GetTableCountFromDB(const ATableName, ACondition: string): Integer;
+const
+  CSSelectSQL = 'Select * From %s  %s ';
+var
+  recordset: _Recordset;
+  ADOQuery: TADOQuery;
+begin
+  Result := 0;
+  ADOQuery := GetOneQry;
+  try
+    ADOQuery.Close;
+    ADOQuery.SQL.Clear;
+    ADOQuery.SQL.Add(Format(CSSelectSQL, [ATableName, ACondition]));
+    //ADOQuery.LockType := ltReadOnly;
+    //ADOQuery.Fields['id'].AsString;
+    ADOQuery.Open;
+    recordset := ADOQuery.Recordset;
+    Result := recordset.RecordCount;
+  finally
+    FreeMyQuery(ADOQuery);
+  end;
+end;
+
+function TDatabaseControl.GetDBIdByDBName(const ATableName, AColName, AName: string): Integer;
+const
+  CSSQL = 'select Id from %s where %s = %s ';
+var
+  recordset: _Recordset;
+  ADOQuery: TADOQuery;
+begin
+  Result := -1;
+  ADOQuery := GetOneQry;
+  try
+    ADOQuery.Close;
+    ADOQuery.SQL.Clear;
+    ADOQuery.SQL.Text := Format(CSSQL, [ATableName, AColName, QuotedStr(AName)]);
+    //ADOQuery.LockType := ltReadOnly;
+    ADOQuery.Open;
+    recordset := ADOQuery.Recordset;
+    if recordset.RecordCount > 0 then
+    begin
+      recordset.MoveFirst;
+      while not recordset.EOF do
+      begin
+        Result := Integer(recordset.Fields.Item['Id'].Value);
+        //ADOQuery.Fields['id'].AsDateTime
+        recordset.MoveNext;
+      end;
+      //ADOQuery.Recordset.Fields.Item[];
+    end;
+  finally
+    FreeMyQuery(ADOQuery);
+  End;
+end;
+
+procedure TDatabaseControl.AddDeviceFromXMLData(
+  IXMLDBData: IXMLGuoSenDeviceSystemType);
+const
+  CSAddOneDeviceItem = 'Select * From DeviceInfo Where 1=2 ';
+var
+  sSql: string;
+  ADOQuery: TADOQuery;
+  IXMLRowItem: IXMLRowItemType;
+begin
+  ADOQuery := GetOneQry;
+  try
+    ADOQuery.Close;
+    ADOQuery.LockType := ltOptimistic;
+    ADOQuery.SQL.Text := CSAddOneDeviceItem;
+    ADOQuery.Open;
+    ADOQuery.Append;
+
+    IXMLRowItem := IXMLDBData.DBData.RowData.RowItem[0];
+
+    ADOQuery.FieldByName(CSWriteDateTime).AsDateTime := Now;
+    ADOQuery.FieldByName(CSDeviceTypeId).AsInteger := StrToInt(GetFieldValueByFieldName(IXMLRowItem, CSDeviceTypeId));
+    ADOQuery.FieldByName(CSBrandId).AsInteger := StrToInt(GetFieldValueByFieldName(IXMLRowItem, CSBrandId));
+    ADOQuery.FieldByName(CSModel).AsString := GetFieldValueByFieldName(IXMLRowItem, CSModel);
+    ADOQuery.FieldByName(CSSeqNum).AsString := GetFieldValueByFieldName(IXMLRowItem, CSSeqNum);
+    ADOQuery.FieldByName(CSProductionDate).AsDateTime := StrToDateTime(GetFieldValueByFieldName(IXMLRowItem, CSProductionDate));
+    ADOQuery.FieldByName(CSQuantity).AsInteger := StrToInt(GetFieldValueByFieldName(IXMLRowItem, CSQuantity));
+    ADOQuery.FieldByName(CSMAC).AsString := GetFieldValueByFieldName(IXMLRowItem, CSMAC);
+    ADOQuery.FieldByName(CSMemo).AsString := GetFieldValueByFieldName(IXMLRowItem, CSMemo);
+    ADOQuery.FieldByName(CSIsVisible).AsBoolean := True;
+
+    //ADOQuery.FieldByName('IsVisible').AsBoolean := AOrderModel.IsVisible;
+    ADOQuery.Post;
+  finally
+    FreeMyQuery(ADOQuery);
+  end
+end;
+
+procedure TDatabaseControl.DelDeviceByXMLData(
+  IXMLDBData: IXMLGuoSenDeviceSystemType);
+const
+  CSQryOneDeviceItem = 'Select * From DeviceInfo Where Id=%d ';
+var
+  sSql: string;
+  ADOQuery: TADOQuery;
+  IXMLRowItem: IXMLRowItemType;
+begin
+  ADOQuery := GetOneQry;
+  try
+    ADOQuery.Close;
+    ADOQuery.LockType := ltOptimistic;
+    ADOQuery.SQL.Text := Format(CSQryOneDeviceItem, [IXMLDBData.DBData.RowData.RowItem[0].ID]);
+    ADOQuery.Open;
+    ADOQuery.Edit;
+
+    ADOQuery.FieldByName(CSIsVisible).AsBoolean := False;
+    
+    ADOQuery.Post;
+  finally
+    FreeMyQuery(ADOQuery);
+  end;
+end;
+
+procedure TDatabaseControl.ModifyDeviceByXMLData(
+  IXMLDBData: IXMLGuoSenDeviceSystemType);
+begin
+
+end;
+
+//此方法可以查询所有表的内容，为什么呢
+//因为此方法中使用IXMLData当成一个条件和结果的容器
+//传入前已把条件装满，此方法中直接能从此容器找到必需的条件，然后查询，得出结果
+//并将得到的结果存入IXMLData的结果当中
+//SQL放查询的SQL语句，ColData放需要得到的字段名，RowData存查得的结果
+//所以SQL和ColData都是放条件的，RowData是放结果的
+procedure TDatabaseControl.QueryDataByXMLData(
+  IXMLDBData: IXMLGuoSenDeviceSystemType);
+var
+  ADOQuery: TADOQuery;
+begin
+  ADOQuery := GetOneQry;
+  try
+    ADOQuery.Close;
+    ADOQuery.SQL.Clear;
+    ADOQuery.SQL.Add(IXMLDBData.DBData.SQL);
+    //ADOQuery.LockType := ltReadOnly;
+    //ADOQuery.Fields['id'].AsString;
+    ADOQuery.Open;
+
+    TransformADOQryToXMLData(ADOQuery, IXMLDBData);
+  finally
+    FreeMyQuery(ADOQuery);
+  end;
+end;
+
+//-----------------------------------------
+
+procedure TDatabaseControl.AddNameToDB(const ATable, AName: string);
+begin
+
+end;
+
+procedure TDatabaseControl.DelNameById(const ATable: string;
+  AIndexId: Integer);
+begin
+
+end;
+
+procedure TDatabaseControl.ModifyNameById(const ATable, AName: string;
+  AIndexId: Integer);
+begin
+
+end;
+
+procedure TDatabaseControl.QueryNameFromDB(const ATable, AColName: string;
+  ANameList: TStringList);
+const
+  CSSQL = 'select %s from %s ';
+var
+  recordset: _Recordset;
+  ADOQuery: TADOQuery;
+begin
+  if ANameList.Count > 0 then
+    ANameList.Clear;
+  ADOQuery := GetOneQry;
+  try
+    ADOQuery.Close;
+    ADOQuery.SQL.Clear;
+    ADOQuery.SQL.Text := Format(CSSQL, [AColName, ATable]);
+    //ADOQuery.LockType := ltReadOnly;
+    ADOQuery.Open;
+    recordset := ADOQuery.Recordset;
+    if recordset.RecordCount > 0 then
+    begin
+      recordset.MoveFirst;
+      while not recordset.EOF do
+      begin
+        ANameList.Add(string(recordset.Fields.Item[AColName].Value));
+        recordset.MoveNext;
+      end;
+      //ADOQuery.Recordset.Fields.Item[];
+    end;
+  finally
+    FreeMyQuery(ADOQuery);
+  End;
+end;
+
+//-----------------------------------------------
+
+procedure TDatabaseControl.AddLocationFromXMLData(
+  IXMLDBData: IXMLGuoSenDeviceSystemType);
+const
+  CSAddOneLocationItem = 'Select * From LocationInfo Where 1=2 ';
+var
+  sSql: string;
+  ADOQuery: TADOQuery;
+  IXMLRowItem: IXMLRowItemType;
+begin
+  ADOQuery := GetOneQry;
+  try
+    ADOQuery.Close;
+    ADOQuery.LockType := ltOptimistic;
+    ADOQuery.SQL.Text := CSAddOneLocationItem;
+    ADOQuery.Open;
+    ADOQuery.Append;
+
+    IXMLRowItem := IXMLDBData.DBData.RowData.RowItem[0];
+
+    ADOQuery.FieldByName(CSLocationTypeId).AsInteger := StrToInt(GetFieldValueByFieldName(IXMLRowItem, CSLocationTypeId));
+    ADOQuery.FieldByName(CSName).AsString := GetFieldValueByFieldName(IXMLRowItem, CSName);
+    ADOQuery.FieldByName(CSAddress).AsString := GetFieldValueByFieldName(IXMLRowItem, CSAddress);
+
+    //ADOQuery.FieldByName('IsVisible').AsBoolean := AOrderModel.IsVisible;
+    ADOQuery.Post;
+  finally
+    FreeMyQuery(ADOQuery);
+  end
+end;
+
+procedure TDatabaseControl.DelLocationByXMLData(
+  IXMLDBData: IXMLGuoSenDeviceSystemType);
+begin
+
+end;
+
+procedure TDatabaseControl.ModifyLocationByXMLData(
+  IXMLDBData: IXMLGuoSenDeviceSystemType);
+begin
+
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TDatabaseControl.AddUserFromXMLData(
+  IXMLDBData: IXMLGuoSenDeviceSystemType);
+const
+  CSAddOneUserItem = 'Select * From UserInfo Where 1=2 ';
+var
+  sSql: string;
+  ADOQuery: TADOQuery;
+  IXMLRowItem: IXMLRowItemType;
+begin
+  ADOQuery := GetOneQry;
+  try
+    ADOQuery.Close;
+    ADOQuery.LockType := ltOptimistic;
+    ADOQuery.SQL.Text := CSAddOneUserItem;
+    ADOQuery.Open;
+    ADOQuery.Append;
+
+    IXMLRowItem := IXMLDBData.DBData.RowData.RowItem[0];
+
+    ADOQuery.FieldByName(CSUserId).AsString := GetFieldValueByFieldName(IXMLRowItem, CSUserId);
+    ADOQuery.FieldByName(CSUserName).AsString := GetFieldValueByFieldName(IXMLRowItem, CSUserName);
+    ADOQuery.FieldByName(CSLocationId).AsInteger := StrToInt(GetFieldValueByFieldName(IXMLRowItem, CSLocationId));
+
+    //ADOQuery.FieldByName('IsVisible').AsBoolean := AOrderModel.IsVisible;
+    ADOQuery.Post;
+  finally
+    FreeMyQuery(ADOQuery);
+  end
+end;
+
+procedure TDatabaseControl.DelUserByXMLData(
+  IXMLDBData: IXMLGuoSenDeviceSystemType);
+begin
+
+end;
+
+procedure TDatabaseControl.ModifyUserByXMLData(
+  IXMLDBData: IXMLGuoSenDeviceSystemType);
+begin
+
+end;
+
+//------------------------------------------------------------------------------
+
+procedure TDatabaseControl.AddDeviceLocationFromXMLData(
+  IXMLDBData: IXMLGuoSenDeviceSystemType);
+const
+  CSAddOneDeviceLocationItem = 'Select * From DeviceLocationInfo Where 1=2 ';
+var
+  sSql: string;
+  ADOQuery: TADOQuery;
+  IXMLRowItem: IXMLRowItemType;
+begin
+  ADOQuery := GetOneQry;
+  try
+    ADOQuery.Close;
+    ADOQuery.LockType := ltOptimistic;
+    ADOQuery.SQL.Text := CSAddOneDeviceLocationItem;
+    ADOQuery.Open;
+    ADOQuery.Append;
+
+    IXMLRowItem := IXMLDBData.DBData.RowData.RowItem[0];
+
+    ADOQuery.FieldByName(CSWriteDateTime).AsDateTime := Now;
+    ADOQuery.FieldByName(CSDeviceId).AsInteger := StrToInt(GetFieldValueByFieldName(IXMLRowItem, CSDeviceId));
+    ADOQuery.FieldByName(CSLocationId).AsInteger := StrToInt(GetFieldValueByFieldName(IXMLRowItem, CSLocationId));
+    ADOQuery.FieldByName(CSUserId).AsInteger := StrToInt(GetFieldValueByFieldName(IXMLRowItem, CSUserId));
+    ADOQuery.FieldByName(CSMemo).AsString := GetFieldValueByFieldName(IXMLRowItem, CSMemo);
+
+    //ADOQuery.FieldByName('IsVisible').AsBoolean := AOrderModel.IsVisible;
+    ADOQuery.Post;
+  finally
+    FreeMyQuery(ADOQuery);
+  end
+end;
+
+procedure TDatabaseControl.DelDeviceLocationByXMLData(
+  IXMLDBData: IXMLGuoSenDeviceSystemType);
+var
+  sSql: string;
+  ADOQuery: TADOQuery;
+  IXMLRowItem: IXMLRowItemType;
+begin
+  AddDeviceHistoryFromXMLData(IXMLDBData);
+
+  ADOQuery := GetOneQry;
+  try
+    ADOQuery.Close;
+    ADOQuery.LockType := ltOptimistic;
+    ADOQuery.SQL.Text := IXMLDBData.DBData.SQL;
+    ADOQuery.Open;
+    ADOQuery.Delete;
+  finally
+    FreeMyQuery(ADOQuery);
+  end;
+end;
+
+procedure TDatabaseControl.AddDeviceHistoryFromXMLData(
+  IXMLDBData: IXMLGuoSenDeviceSystemType);
+const
+  CSAddOneDeviceHistoryItem = 'Select * From DeviceHistoryInfo Where 1=2 ';
+var
+  sSql: string;
+  ADOQuery: TADOQuery;
+  IXMLRowItem: IXMLRowItemType;
+begin
+  ADOQuery := GetOneQry;
+  try
+    ADOQuery.Close;
+    ADOQuery.LockType := ltOptimistic;
+    ADOQuery.SQL.Text := CSAddOneDeviceHistoryItem;
+    ADOQuery.Open;
+    ADOQuery.Append;
+
+    IXMLRowItem := IXMLDBData.DBData.RowData.RowItem[0];
+
+    ADOQuery.FieldByName(CSDeviceId).AsInteger := StrToInt(GetFieldValueByFieldName(IXMLRowItem, CSDeviceId));
+    ADOQuery.FieldByName(CSStartDateTime).AsDateTime := StrToDateTime(GetFieldValueByFieldName(IXMLRowItem, CSWriteDateTime));
+    ADOQuery.FieldByName(CSEndDateTime).AsDateTime := Now;
+    ADOQuery.FieldByName(CSLocationId).AsInteger := StrToInt(GetFieldValueByFieldName(IXMLRowItem, CSLocationId));
+    ADOQuery.FieldByName(CSUserId).AsInteger := StrToInt(GetFieldValueByFieldName(IXMLRowItem, CSUserId));
+    ADOQuery.FieldByName(CSMemo).AsString := GetFieldValueByFieldName(IXMLRowItem, CSMemo);
+
+    //ADOQuery.FieldByName('IsVisible').AsBoolean := AOrderModel.IsVisible;
+    ADOQuery.Post;
+  finally
+    FreeMyQuery(ADOQuery);
+  end
+end;
+
+function TDatabaseControl.GetLocationNameByDeviceId(
+  ADeviceId: Integer): string;
+const
+  CSSelectSQL = 'Select b.Name From DeviceLocationInfo a, LocationInfo b ' +
+                'where (a.LocationId = b.Id) and (DeviceId = %d) ';
+var
+  recordset: _Recordset;
+  ADOQuery: TADOQuery;
+begin
+  Result := '仓库';
+  ADOQuery := GetOneQry;
+  try
+    ADOQuery.Close;
+    ADOQuery.SQL.Clear;
+    ADOQuery.SQL.Add(Format(CSSelectSQL, [ADeviceId]));
+    //ADOQuery.LockType := ltReadOnly;
+    //ADOQuery.Fields['id'].AsString;
+    ADOQuery.Open;
+    recordset := ADOQuery.Recordset;
+    if recordset.RecordCount > 0 then
+    begin
+      recordset.MoveFirst;
+
+      Result := string(recordset.Fields.Item[CSName].Value);
+    end;
+  finally
+    FreeMyQuery(ADOQuery);
+  end;
+end;
+
+function TDatabaseControl.GetUserNameByDeviceId(
+  ADeviceId: Integer): string;
+const
+  CSSelectSQL = 'Select b.UserName From DeviceLocationInfo a, UserInfo b ' +
+                'where (a.UserId = b.Id) and (DeviceId = %d) ';
+var
+  recordset: _Recordset;
+  ADOQuery: TADOQuery;
+begin
+  Result := '电脑科';
+  ADOQuery := GetOneQry;
+  try
+    ADOQuery.Close;
+    ADOQuery.SQL.Clear;
+    ADOQuery.SQL.Add(Format(CSSelectSQL, [ADeviceId]));
+    //ADOQuery.LockType := ltReadOnly;
+    //ADOQuery.Fields['id'].AsString;
+    ADOQuery.Open;
+    recordset := ADOQuery.Recordset;
+    if recordset.RecordCount > 0 then
+    begin
+      recordset.MoveFirst;
+
+      Result := string(recordset.Fields.Item[CSUserName].Value);
+    end;
+  finally
+    FreeMyQuery(ADOQuery);
+  end;
+end;
+
+function TDatabaseControl.GetOutTimeByDeviceId(ADeviceId: Integer): string;
+const
+  CSSelectSQL = 'Select * From DeviceLocationInfo ' +
+                'where (DeviceId = %d) ';
+var
+  recordset: _Recordset;
+  ADOQuery: TADOQuery;
+begin
+  Result := EmptyStr;
+  ADOQuery := GetOneQry;
+  try
+    ADOQuery.Close;
+    ADOQuery.SQL.Clear;
+    ADOQuery.SQL.Add(Format(CSSelectSQL, [ADeviceId]));
+    ADOQuery.Open;
+    recordset := ADOQuery.Recordset;
+    if recordset.RecordCount > 0 then
+    begin
+      recordset.MoveFirst;
+
+      Result := string(recordset.Fields.Item[CSUserName].Value);
+    end;
+  finally
+    FreeMyQuery(ADOQuery);
+  end;
+end;
+
+end.

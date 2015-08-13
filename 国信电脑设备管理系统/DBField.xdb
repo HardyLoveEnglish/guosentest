@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xdb="http://www.borland.com/schemas/delphi/6.0/XMLDataBinding">
+  <xs:element name="GuoSenDeviceSystem" type="GuoSenDeviceSystemType"/>
+  <xs:complexType name="GuoSenDeviceSystemType"><xs:annotation>
+      <xs:appinfo xdb:docElement="GuoSenDeviceSystem"/>
+    </xs:annotation>
+    
+    <xs:sequence>
+      <xs:element name="DBData" type="DBDataType"/>
+    </xs:sequence>
+  </xs:complexType>
+  <xs:complexType name="DBDataType">
+    <xs:sequence>
+      <xs:element name="ColData" type="ColDataType"/>
+      <xs:element name="RowData" type="RowDataType"/>
+    </xs:sequence>
+    <xs:attribute name="OperaterType" type="xs:string"/>
+    <xs:attribute name="DBTable" type="xs:string"/>
+    <xs:attribute name="SQL" type="xs:string"/>
+  </xs:complexType>
+  <xs:complexType name="ColDataType">
+    <xs:sequence>
+      <xs:element name="ColItem" type="ColItemType" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+  <xs:complexType name="ColItemType">
+    <xs:sequence/>
+    <xs:attribute name="Name" type="xs:string"/>
+    <xs:attribute name="DisplayName" type="xs:string"/>
+  </xs:complexType>
+  <xs:complexType name="RowDataType">
+    <xs:sequence>
+      <xs:element name="RowItem" type="RowItemType" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+  <xs:complexType name="RowItemType">
+    <xs:sequence>
+      <xs:element name="Field" type="FieldType" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="ID" type="xs:integer"/>
+  </xs:complexType>
+  <xs:complexType name="FieldType">
+    <xs:sequence/>
+    <xs:attribute name="Name" type="xs:string"/>
+    <xs:attribute name="Value" type="xs:string"/>
+  </xs:complexType>
+</xs:schema>
